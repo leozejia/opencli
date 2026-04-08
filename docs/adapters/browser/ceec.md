@@ -1,0 +1,22 @@
+# Ceec
+
+**Mode**: 🔐 Browser · **Domain**: `ec.ceec.net.cn`
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `opencli ceec search "<query>" --limit <n>` | Search CEEC procurement notices and return normalized result rows |
+
+## Usage Examples
+
+```bash
+opencli ceec search "elevator" --limit 20 -f json
+opencli ceec search "电力 电梯" --limit 10 -f json
+```
+
+## Notes
+
+- This adapter probes CEEC entry pages and extracts visible notice links.
+- The `date` field is normalized to `YYYY-MM-DD` when detectable.
+- Results are deduplicated by `title + url`.
