@@ -68,7 +68,13 @@ describe('procurement contract helpers', () => {
 
   it('classifies detail urls and content type', () => {
     expect(__test__.isDetailPage('https://a.com/notice/detail?id=1')).toBe(true);
+    expect(__test__.isDetailPage('https://shandong.jianyu360.cn/jybx/20260310_26030938267551.html')).toBe(true);
     expect(__test__.isDetailPage('https://a.com/search?page=1')).toBe(false);
     expect(__test__.classifyContentType('中标结果公告', 'https://a.com/detail/1', '中标候选人')).toBe('result');
+    expect(__test__.classifyContentType(
+      '电梯采购公告',
+      'https://shandong.jianyu360.cn/jybx/20260310_26030938267551.html',
+      '首页 帮助中心 招标公告',
+    )).toBe('notice');
   });
 });

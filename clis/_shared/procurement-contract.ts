@@ -116,6 +116,7 @@ const NAVIGATION_HINTS = [
 const DETAIL_URL_HINTS = [
   '/detail',
   '/content',
+  '/jybx/',
   '/notice',
   '/article',
   '/view',
@@ -230,10 +231,10 @@ function splitEvidenceBlocks(text: string, query: string): string[] {
 
 function classifyContentType(title: string, url: string, contextText: string): ProcurementContentType {
   const haystack = `${title} ${contextText} ${url}`.toLowerCase();
-  if (containsAny(haystack, NAVIGATION_HINTS)) return 'navigation';
   if (containsAny(haystack, RESULT_HINTS)) return 'result';
   if (containsAny(haystack, NOTICE_HINTS)) return 'notice';
   if (containsAny(haystack, NEWS_HINTS)) return 'news';
+  if (containsAny(haystack, NAVIGATION_HINTS)) return 'navigation';
   return 'unknown';
 }
 
