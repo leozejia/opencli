@@ -142,7 +142,7 @@ cli({
     if (rows.length === 0 && await isAuthRequired(page)) {
       throw new AuthRequiredError(
         DOMAIN,
-        '[taxonomy=selector_drift] site=jianyu command=search login required or human verification',
+        '[taxonomy=selector_drift] site=jianyu command=search blocked by human verification / access challenge',
       );
     }
 

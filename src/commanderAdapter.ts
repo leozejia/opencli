@@ -221,7 +221,11 @@ async function renderError(err: unknown, cmdName: string, verbose: boolean): Pro
 
   // ── AuthRequiredError ─────────────────────────────────────────────────
   if (err instanceof AuthRequiredError) {
-    console.error(chalk.red(`🔒 Not logged in to ${err.domain}`));
+    const defaultMessage = `Not logged in to ${err.domain}`;
+    const headline = err.message && err.message !== defaultMessage
+      ? err.message
+      : defaultMessage;
+    console.error(chalk.red(`🔒 ${headline}`));
     // Respect custom hints set by the adapter; fall back to generic guidance.
     console.error(chalk.yellow(`→ ${err.hint ?? `Open Chrome or Chromium and log in to https://${err.domain}, then retry.`}`));
     return;
