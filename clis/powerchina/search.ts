@@ -109,10 +109,10 @@ cli({
     }
 
     return toProcurementSearchRecords(rows, {
-        site: 'powerchina',
-        query,
-        limit,
-      });
+      site: 'powerchina',
+      query,
+      limit,
+    });
   },
 });
 
