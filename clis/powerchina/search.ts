@@ -8,8 +8,8 @@ import {
   cleanText,
   normalizeDate,
   toProcurementSearchRecords,
-} from '../_shared/procurement-contract.js';
-import { searchRowsFromEntries } from '../_shared/china-bid-search.js';
+} from '../jianyu/shared/procurement-contract.js';
+import { searchRowsFromEntries } from '../jianyu/shared/china-bid-search.js';
 
 const SEARCH_ENTRIES = [
   'https://bid.powerchina.cn/search',

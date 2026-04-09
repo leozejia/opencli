@@ -1,5 +1,5 @@
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { runProcurementDetail } from '../_shared/procurement-detail.js';
+import { runProcurementDetail } from '../jianyu/shared/procurement-detail.js';
 
 cli({
   site: 'sinopec',
@@ -19,4 +19,3 @@ cli({
     site: 'sinopec',
   }),
 });
-

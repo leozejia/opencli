@@ -7,8 +7,8 @@ import {
   detectAuthPrompt,
   normalizeDate,
   searchRowsFromEntries,
-} from '../_shared/china-bid-search.js';
-import { toProcurementSearchRecords } from '../_shared/procurement-contract.js';
+} from '../jianyu/shared/china-bid-search.js';
+import { toProcurementSearchRecords } from '../jianyu/shared/procurement-contract.js';
 
 const SITE = 'ggzy';
 const DOMAIN = 'www.ggzy.gov.cn';

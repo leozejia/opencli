@@ -10,8 +10,8 @@ import {
   detectAuthPrompt,
   normalizeDate,
   searchRowsFromEntries,
-} from '../_shared/china-bid-search.js';
-import { toProcurementSearchRecords } from '../_shared/procurement-contract.js';
+} from './shared/china-bid-search.js';
+import { toProcurementSearchRecords } from './shared/procurement-contract.js';
 
 const SITE = 'jianyu';
 const DOMAIN = 'www.jianyu360.cn';
