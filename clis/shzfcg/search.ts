@@ -8,6 +8,7 @@ import {
   normalizeDate,
   searchRowsFromEntries,
 } from '../_shared/china-bid-search.js';
+import { toProcurementSearchRecords } from '../_shared/procurement-contract.js';
 
 const SITE = 'shzfcg';
 const DOMAIN = 'www.zfcg.sh.gov.cn';
@@ -31,7 +32,7 @@ cli({
     { name: 'query', required: true, positional: true, help: 'Search keyword, e.g. "elevator"' },
     { name: 'limit', type: 'int', default: 20, help: 'Number of results (max 50)' },
   ],
-  columns: ['rank', 'title', 'date', 'url'],
+  columns: ['rank', 'content_type', 'title', 'publish_time', 'project_code', 'budget_or_limit', 'url'],
   func: async (page, kwargs) => {
     const query = cleanText(kwargs.query);
     const limit = Math.max(1, Math.min(Number(kwargs.limit) || 20, 50));
@@ -45,16 +46,15 @@ cli({
     if (rows.length === 0 && await detectAuthPrompt(page)) {
       throw new AuthRequiredError(
         DOMAIN,
-        'SHZFCG search requires login or human verification',
+        '[taxonomy=selector_drift] site=shzfcg command=search login required or human verification',
       );
     }
 
-    return dedupeCandidates(rows).slice(0, limit).map((item, index) => ({
-      rank: index + 1,
-      title: item.title,
-      date: item.date,
-      url: item.url,
-    }));
+    return toProcurementSearchRecords(dedupeCandidates(rows), {
+      site: SITE,
+      query,
+      limit,
+    });
   },
 });
 

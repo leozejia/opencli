@@ -3,18 +3,14 @@
  */
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import { AuthRequiredError } from '@jackwener/opencli/errors';
-
-interface JianyuCandidate {
-  title: string;
-  url: string;
-  date: string;
-}
+import {
+  type ProcurementSearchCandidateRaw,
+  cleanText,
+  normalizeDate,
+  toProcurementSearchRecords,
+} from '../_shared/procurement-contract.js';
 
 const SEARCH_ENTRY = 'https://www.jianyu360.cn/jylab/supsearch/index.html';
-
-function cleanText(value: unknown): string {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-}
 
 export function buildSearchUrl(query: string): string {
   const url = new URL(SEARCH_ENTRY);
@@ -24,18 +20,8 @@ export function buildSearchUrl(query: string): string {
   return url.toString();
 }
 
-export function normalizeDate(raw: string): string {
-  const normalized = cleanText(raw);
-  const match = normalized.match(/(20\d{2})[.\-/年](\d{1,2})[.\-/月](\d{1,2})/);
-  if (!match) return '';
-  const year = match[1];
-  const month = match[2].padStart(2, '0');
-  const day = match[3].padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function dedupeCandidates(items: JianyuCandidate[]): JianyuCandidate[] {
-  const deduped: JianyuCandidate[] = [];
+function dedupeCandidates(items: ProcurementSearchCandidateRaw[]): ProcurementSearchCandidateRaw[] {
+  const deduped: ProcurementSearchCandidateRaw[] = [];
   const seen = new Set<string>();
   for (const item of items) {
     const key = `${item.title}\t${item.url}`;
@@ -57,7 +43,7 @@ cli({
     { name: 'query', required: true, positional: true, help: 'Search keyword, e.g. "procurement"' },
     { name: 'limit', type: 'int', default: 20, help: 'Number of results (max 50)' },
   ],
-  columns: ['rank', 'title', 'date', 'url'],
+  columns: ['rank', 'content_type', 'title', 'publish_time', 'project_code', 'budget_or_limit', 'url'],
   func: async (page, kwargs) => {
     const query = cleanText(kwargs.query);
     const limit = Math.max(1, Math.min(Number(kwargs.limit) || 20, 50));
@@ -83,15 +69,8 @@ cli({
           const day = String(match[3]).padStart(2, '0');
           return match[1] + '-' + month + '-' + day;
         };
-        const pickDateText = (node) => {
-          let cursor = node;
-          for (let i = 0; i < 4 && cursor; i++) {
-            const text = clean(cursor.innerText || cursor.textContent || '');
-            const date = parseDate(text);
-            if (date) return date;
-            cursor = cursor.parentElement;
-          }
-          return '';
+        const pickContext = (node) => {
+          return clean((node.closest('tr, li, div, article, section') || node).innerText || '');
         };
 
         const anchors = Array.from(
@@ -106,10 +85,12 @@ cli({
           const key = title + '\\t' + url;
           if (seen.has(key)) continue;
           seen.add(key);
+          const contextText = pickContext(anchor);
           rows.push({
             title,
             url,
-            date: pickDateText(anchor),
+            date: parseDate(contextText),
+            contextText,
           });
         }
         return rows;
@@ -117,35 +98,33 @@ cli({
     `);
 
     const pageText = cleanText(await page.evaluate('document.body ? document.body.innerText : ""'));
-    if (
-      !Array.isArray(payload)
-      && /(请先登录|登录后|未登录|验证码)/.test(pageText)
-    ) {
-      throw new AuthRequiredError(
-        'www.jianyu360.cn',
-        'Jianyu search results require login or human verification',
-      );
-    }
-
     const rows = Array.isArray(payload)
       ? payload
-        .filter((item): item is JianyuCandidate => !!item && typeof item === 'object')
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
         .map((item) => ({
           title: cleanText(item.title),
           url: cleanText(item.url),
           date: normalizeDate(cleanText(item.date)),
+          contextText: cleanText(item.contextText),
         }))
         .filter((item) => item.title && item.url)
       : [];
 
-    return dedupeCandidates(rows)
-      .slice(0, limit)
-      .map((item, index) => ({
-        rank: index + 1,
-        title: item.title,
-        date: item.date,
-        url: item.url,
-      }));
+    if (
+      rows.length === 0
+      && /(请先登录|登录后|未登录|验证码|人机验证)/.test(pageText)
+    ) {
+      throw new AuthRequiredError(
+        'www.jianyu360.cn',
+        '[taxonomy=selector_drift] site=jianyu command=search login required or human verification',
+      );
+    }
+
+    return toProcurementSearchRecords(dedupeCandidates(rows), {
+      site: 'jianyu',
+      query,
+      limit,
+    });
   },
 });
 

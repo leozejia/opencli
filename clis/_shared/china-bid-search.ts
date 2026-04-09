@@ -1,28 +1,18 @@
-export interface BidSearchCandidate {
-  title: string;
-  url: string;
-  date: string;
-}
+import {
+  type ProcurementSearchCandidateRaw,
+  cleanText,
+  normalizeDate,
+} from './procurement-contract.js';
 
-export function cleanText(value: unknown): string {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-}
+export type BidSearchCandidate = ProcurementSearchCandidateRaw;
 
-export function normalizeDate(raw: string): string {
-  const normalized = cleanText(raw);
-  const match = normalized.match(/(20\d{2})[.\-/年](\d{1,2})[.\-/月](\d{1,2})/);
-  if (!match) return '';
-  const year = match[1];
-  const month = match[2].padStart(2, '0');
-  const day = match[3].padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+export { cleanText, normalizeDate };
 
 export function dedupeCandidates(items: BidSearchCandidate[]): BidSearchCandidate[] {
   const deduped: BidSearchCandidate[] = [];
   const seen = new Set<string>();
   for (const item of items) {
-    const key = `${item.title}\t${item.url}`;
+    const key = `${cleanText(item.title)}\t${cleanText(item.url)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
@@ -69,7 +59,7 @@ export function buildSearchCandidates(
 
 export async function detectAuthPrompt(page: any): Promise<boolean> {
   const pageText = cleanText(await page.evaluate('document.body ? document.body.innerText : ""'));
-  return /(请先登录|未登录|登录后|验证码|人机验证|权限不足|无权限)/.test(pageText);
+  return /(请先登录|未登录|登录后|验证码|人机验证|权限不足|无权限|请完善信息后访问)/.test(pageText);
 }
 
 export async function searchRowsFromEntries(
@@ -110,36 +100,71 @@ export async function searchRowsFromEntries(
         };
 
         const token = ${JSON.stringify(queryText)};
-        const tokenParts = token.split(/\\s+/).filter(Boolean);
+        const tokenParts = token.split(/\\s+/).filter(Boolean).map((part) => part.toLowerCase());
         const allowedHosts = ${JSON.stringify(allowedHostFragments.map((item) => item.toLowerCase()))};
+        const procurementHints = ['招标', '采购', '公告', '项目', '中标', '成交', '询价', '竞价', '比选', '投标', 'notice', 'tender', 'procurement', 'bidding'];
+        const rowSelectors = [
+          'table tbody tr',
+          'table tr',
+          'ul li',
+          'ol li',
+          'article',
+          'section',
+          '.list li',
+          '.notice li',
+          '[class*="list"] li',
+          '[class*="notice"] li',
+          '[class*="item"]',
+          '[class*="row"]',
+        ];
+
+        const rowNodes = [];
+        const rowSeen = new Set();
+        for (const selector of rowSelectors) {
+          const nodes = Array.from(document.querySelectorAll(selector));
+          for (const node of nodes) {
+            const text = clean(node.innerText || node.textContent || '');
+            if (!text || text.length < 8) continue;
+            const lowerText = text.toLowerCase();
+            const hasDate = /(20\\d{2})[.\\-/年](\\d{1,2})[.\\-/月](\\d{1,2})/.test(text);
+            const hasHint = procurementHints.some((hint) => lowerText.includes(hint));
+            const hasQuery = tokenParts.length === 0 || tokenParts.some((part) => lowerText.includes(part));
+            if (!hasDate && !hasHint && !hasQuery) continue;
+            if (rowSeen.has(node)) continue;
+            rowSeen.add(node);
+            rowNodes.push(node);
+          }
+        }
 
         const rows = [];
         const seen = new Set();
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        for (const anchor of anchors) {
-          const title = clean(anchor.textContent || '');
-          if (!title || title.length < 4) continue;
-          const url = toAbsolute(anchor.getAttribute('href') || anchor.href || '');
-          if (!url) continue;
-          const lowerUrl = url.toLowerCase();
-          const hostMatched = allowedHosts.length === 0 || allowedHosts.some((item) => lowerUrl.includes(item));
-          if (!hostMatched) continue;
+        for (const node of rowNodes) {
+          const contextText = clean(node.innerText || node.textContent || '');
+          const contextLower = contextText.toLowerCase();
+          const hasHint = procurementHints.some((hint) => contextLower.includes(hint));
+          const hasQuery = tokenParts.length === 0 || tokenParts.some((part) => contextLower.includes(part));
+          if (!hasHint && !hasQuery) continue;
 
-          const contextNode = anchor.closest('tr, li, div, article, section') || anchor;
-          const contextText = clean(contextNode.innerText || contextNode.textContent || '');
-          const searchable = (title + ' ' + contextText).toLowerCase();
-          const queryMatched = tokenParts.length === 0
-            || tokenParts.some((part) => searchable.includes(part.toLowerCase()));
-          if (!queryMatched) continue;
+          const anchors = Array.from(node.querySelectorAll('a[href]'));
+          for (const anchor of anchors) {
+            const title = clean(anchor.textContent || '');
+            if (!title || title.length < 4) continue;
+            const url = toAbsolute(anchor.getAttribute('href') || anchor.href || '');
+            if (!url) continue;
+            const lowerUrl = url.toLowerCase();
+            const hostMatched = allowedHosts.length === 0 || allowedHosts.some((item) => lowerUrl.includes(item));
+            if (!hostMatched) continue;
 
-          const key = title + '\\t' + url;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          rows.push({
-            title,
-            url,
-            date: parseDate(contextText),
-          });
+            const key = title + '\\t' + url;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            rows.push({
+              title,
+              url,
+              date: parseDate(contextText),
+              contextText,
+            });
+          }
         }
         return rows;
       })()
@@ -148,10 +173,12 @@ export async function searchRowsFromEntries(
     if (Array.isArray(payload)) {
       for (const item of payload) {
         if (!item || typeof item !== 'object') continue;
-        const candidate = {
-          title: cleanText((item as Record<string, unknown>).title),
-          url: cleanText((item as Record<string, unknown>).url),
-          date: normalizeDate(cleanText((item as Record<string, unknown>).date)),
+        const row = item as Record<string, unknown>;
+        const candidate: BidSearchCandidate = {
+          title: cleanText(row.title),
+          url: cleanText(row.url),
+          date: normalizeDate(cleanText(row.date)),
+          contextText: cleanText(row.contextText),
         };
         if (!candidate.title || !candidate.url) continue;
         rows.push(candidate);
