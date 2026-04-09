@@ -16,6 +16,8 @@ const SEARCH_ENTRIES = [
   'https://bid.powerchina.cn/',
 ];
 
+const PROCUREMENT_TITLE_HINT = /(公告|招标|采购|中标|成交|项目|notice|tender|bidding)/i;
+
 export function buildSearchCandidates(query: string): string[] {
   const keyword = query.trim();
   if (!keyword) return [...SEARCH_ENTRIES];
@@ -40,6 +42,32 @@ function dedupeCandidates(items: ProcurementSearchCandidateRaw[]): ProcurementSe
   return deduped;
 }
 
+function isLikelyNavigationUrl(rawUrl: string): boolean {
+  const urlText = cleanText(rawUrl);
+  if (!urlText) return true;
+  try {
+    const parsed = new URL(urlText);
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    const hash = cleanText(parsed.hash).toLowerCase();
+    if (pathname === '/' || pathname === '/index') return true;
+    if (pathname === '/search') return true;
+    if (hash === '#/' || hash === '#/index' || hash.startsWith('#/search')) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function filterNavigationRows(items: ProcurementSearchCandidateRaw[]): ProcurementSearchCandidateRaw[] {
+  return items.filter((item) => {
+    const title = cleanText(item.title);
+    const url = cleanText(item.url);
+    if (!url) return false;
+    if (!isLikelyNavigationUrl(url)) return true;
+    return PROCUREMENT_TITLE_HINT.test(title);
+  });
+}
+
 cli({
   site: 'powerchina',
   name: 'search',
@@ -55,12 +83,20 @@ cli({
   func: async (page, kwargs) => {
     const query = cleanText(kwargs.query);
     const limit = Math.max(1, Math.min(Number(kwargs.limit) || 20, 50));
-    const rows = await searchRowsFromEntries(page, {
+    const extractedRows = await searchRowsFromEntries(page, {
       query,
       candidateUrls: buildSearchCandidates(query),
       allowedHostFragments: ['bid.powerchina.cn', 'powerchina.cn'],
       limit,
     });
+    const rows = filterNavigationRows(
+      dedupeCandidates(extractedRows).map((item) => ({
+        title: cleanText(item.title),
+        url: cleanText(item.url),
+        date: normalizeDate(cleanText(item.date)),
+        contextText: cleanText(item.contextText),
+      })),
+    );
 
     if (rows.length === 0) {
       const pageText = cleanText(await page.evaluate('document.body ? document.body.innerText : ""'));
@@ -72,19 +108,11 @@ cli({
       }
     }
 
-    return toProcurementSearchRecords(
-      dedupeCandidates(rows).map((item) => ({
-        title: cleanText(item.title),
-        url: cleanText(item.url),
-        date: normalizeDate(cleanText(item.date)),
-        contextText: cleanText(item.contextText),
-      })),
-      {
+    return toProcurementSearchRecords(rows, {
         site: 'powerchina',
         query,
         limit,
-      },
-    );
+      });
   },
 });
 
@@ -92,4 +120,5 @@ export const __test__ = {
   normalizeDate,
   buildSearchCandidates,
   dedupeCandidates,
+  filterNavigationRows,
 };
