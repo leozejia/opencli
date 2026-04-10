@@ -15,10 +15,33 @@ const SEARCH_ENTRIES = [
   'https://bid.powerchina.cn/search',
   'https://bid.powerchina.cn/',
 ];
+const API_LIST_ENDPOINT = 'https://bid.powerchina.cn/newcbs/recpro-newmember/BidAnnouncementSummary/list';
+const API_DETAIL_ENDPOINT = 'https://bid.powerchina.cn/newcbs/recpro-newmember/BidAnnouncementSummary/getInfo';
+const API_DEFAULT_ANNOUNCEMENT_TYPE = '招采公告';
 
 const PROCUREMENT_TITLE_HINT = /(公告|招标|采购|中标|成交|项目|notice|tender|bidding)/i;
 const NAVIGATION_TITLE_HINT = /^(english|中文|chinese|language|home|首页|搜索|search)$/i;
 const RETRYABLE_SEARCH_ERROR_HINT = /(detached while handling command|execution context was destroyed|target closed|cannot find context with specified id)/i;
+
+interface PowerChinaApiListRow {
+  id?: string;
+  title?: string;
+  announcementType?: string;
+  companyType?: string | number;
+  titleTypeName?: string;
+  source?: string;
+  publishTime?: string;
+  registrationDeadline?: string;
+  submissionDeadline?: string;
+  bidOpenTime?: string;
+}
+
+interface PowerChinaApiListResponse {
+  code?: number;
+  msg?: string;
+  total?: number;
+  rows?: PowerChinaApiListRow[];
+}
 
 export function buildSearchCandidates(query: string): string[] {
   const keyword = query.trim();
@@ -85,6 +108,76 @@ function filterNavigationRows(items: ProcurementSearchCandidateRaw[]): Procureme
   });
 }
 
+export function buildApiDetailUrl(id: string, now = Date.now()): string {
+  const normalizedId = cleanText(id);
+  if (!normalizedId) return '';
+  return `${API_DETAIL_ENDPOINT}/${encodeURIComponent(normalizedId)}?time=${now}`;
+}
+
+function toApiCandidate(row: PowerChinaApiListRow, now = Date.now()): ProcurementSearchCandidateRaw | null {
+  const id = cleanText(row.id);
+  const title = cleanText(row.title);
+  if (!id || !title) return null;
+
+  const url = buildApiDetailUrl(id, now);
+  if (!url) return null;
+
+  const contextText = cleanText([
+    row.announcementType,
+    row.titleTypeName,
+    row.source,
+    row.publishTime,
+    row.registrationDeadline,
+    row.submissionDeadline,
+    row.bidOpenTime,
+  ].filter(Boolean).join(' | '));
+
+  const date = normalizeDate(cleanText(row.publishTime || row.bidOpenTime || row.submissionDeadline || ''));
+  return {
+    title,
+    url,
+    date,
+    contextText,
+  };
+}
+
+async function searchRowsFromApi(query: string, limit: number): Promise<ProcurementSearchCandidateRaw[]> {
+  const keyword = cleanText(query);
+  const pageSize = Math.max(20, Math.min(100, Math.max(limit * 3, limit)));
+  const payload: Record<string, unknown> = {
+    pageNum: 1,
+    pageSize,
+    announcementType: API_DEFAULT_ANNOUNCEMENT_TYPE,
+    companyType: '3',
+    time: Date.now(),
+  };
+  if (keyword) payload.keyWords = keyword;
+
+  const response = await fetch(API_LIST_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json;charset=utf-8',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`[taxonomy=relay_unavailable] site=powerchina command=search api HTTP ${response.status}`);
+  }
+
+  const data = await response.json() as PowerChinaApiListResponse;
+  if ((data.code ?? 200) !== 200) {
+    throw new Error(`[taxonomy=relay_unavailable] site=powerchina command=search api code=${data.code ?? 'unknown'} msg=${cleanText(data.msg)}`);
+  }
+
+  const now = Date.now();
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const mapped = rows
+    .map((row) => toApiCandidate(row, now))
+    .filter((item): item is ProcurementSearchCandidateRaw => Boolean(item));
+  return dedupeCandidates(mapped).slice(0, limit);
+}
+
 cli({
   site: 'powerchina',
   name: 'search',
@@ -101,20 +194,38 @@ cli({
     const query = cleanText(kwargs.query);
     const limit = Math.max(1, Math.min(Number(kwargs.limit) || 20, 50));
     let extractedRows: ProcurementSearchCandidateRaw[] = [];
+    let apiFailure: string | null = null;
+    let apiSucceeded = false;
+
     try {
-      extractedRows = await searchRowsFromEntries(page, {
-        query,
-        candidateUrls: buildSearchCandidates(query),
-        allowedHostFragments: ['bid.powerchina.cn', 'powerchina.cn'],
-        limit,
-      });
+      const apiRows = await searchRowsFromApi(query, limit);
+      extractedRows = apiRows;
+      apiSucceeded = true;
     } catch (error) {
-      const message = cleanText(error instanceof Error ? error.message : String(error || ''));
-      if (RETRYABLE_SEARCH_ERROR_HINT.test(message)) {
-        throw new Error(`[taxonomy=relay_unavailable] site=powerchina command=search detached browser context: ${message}`);
-      }
-      throw error;
+      apiFailure = cleanText(error instanceof Error ? error.message : String(error || ''));
     }
+
+    if (apiSucceeded && extractedRows.length === 0) {
+      return [];
+    }
+
+    if (!apiSucceeded) {
+      try {
+        extractedRows = await searchRowsFromEntries(page, {
+          query,
+          candidateUrls: buildSearchCandidates(query),
+          allowedHostFragments: ['bid.powerchina.cn', 'powerchina.cn'],
+          limit,
+        });
+      } catch (error) {
+        const message = cleanText(error instanceof Error ? error.message : String(error || ''));
+        if (RETRYABLE_SEARCH_ERROR_HINT.test(message)) {
+          throw new Error(`[taxonomy=relay_unavailable] site=powerchina command=search detached browser context: ${message}`);
+        }
+        throw error;
+      }
+    }
+
     const rows = filterNavigationRows(
       dedupeCandidates(extractedRows).map((item) => ({
         title: cleanText(item.title),
@@ -136,6 +247,9 @@ cli({
           '[taxonomy=selector_drift] site=powerchina command=search login required or human verification',
         );
       }
+      if (apiFailure) {
+        throw new Error(`[taxonomy=empty_result] site=powerchina command=search api/dom yielded no result: ${apiFailure}`);
+      }
     }
 
     return toProcurementSearchRecords(rows, {
@@ -153,4 +267,6 @@ export const __test__ = {
   isLikelyNavigationUrl,
   isLikelyNavigationTitle,
   filterNavigationRows,
+  buildApiDetailUrl,
+  toApiCandidate,
 };

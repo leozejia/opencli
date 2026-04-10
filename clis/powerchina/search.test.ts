@@ -42,4 +42,26 @@ describe('powerchina search helpers', () => {
     expect(__test__.isLikelyNavigationTitle('English')).toBe(true);
     expect(__test__.isLikelyNavigationTitle('EN')).toBe(true);
   });
+
+  it('builds api detail urls with stable id', () => {
+    const url = __test__.buildApiDetailUrl('2409419657', 1234567890);
+    expect(url).toBe('https://bid.powerchina.cn/newcbs/recpro-newmember/BidAnnouncementSummary/getInfo/2409419657?time=1234567890');
+  });
+
+  it('maps api rows into normalized search candidates', () => {
+    const mapped = __test__.toApiCandidate({
+      id: '2409419657',
+      title: '某项目电梯采购公告',
+      announcementType: '招采公告',
+      companyType: '3',
+      titleTypeName: '货物类',
+      source: '设备物资集中采购电子平台',
+      publishTime: '2026-04-07 17:05:02',
+      submissionDeadline: '2026-04-14',
+    }, 1700000000000);
+    expect(mapped).not.toBeNull();
+    expect(mapped?.title).toContain('电梯采购公告');
+    expect(mapped?.date).toBe('2026-04-07');
+    expect(mapped?.url).toBe('https://bid.powerchina.cn/newcbs/recpro-newmember/BidAnnouncementSummary/getInfo/2409419657?time=1700000000000');
+  });
 });
