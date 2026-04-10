@@ -8,6 +8,15 @@ export type BidSearchCandidate = ProcurementSearchCandidateRaw;
 
 export { cleanText, normalizeDate };
 
+const SEARCH_STEP_MAX_ATTEMPTS = 3;
+const RETRYABLE_SEARCH_ERROR_PATTERNS = [
+  /detached while handling command/i,
+  /execution context was destroyed/i,
+  /target closed/i,
+  /cannot find context with specified id/i,
+  /no window with id/i,
+];
+
 export function dedupeCandidates(items: BidSearchCandidate[]): BidSearchCandidate[] {
   const deduped: BidSearchCandidate[] = [];
   const seen = new Set<string>();
@@ -62,6 +71,14 @@ export async function detectAuthPrompt(page: any): Promise<boolean> {
   return /(请先登录|未登录|登录后|验证码|人机验证|权限不足|无权限|请完善信息后访问)/.test(pageText);
 }
 
+export function isRetryableSearchError(error: unknown): boolean {
+  const message = error instanceof Error
+    ? cleanText(error.message)
+    : cleanText(String(error ?? ''));
+  if (!message) return false;
+  return RETRYABLE_SEARCH_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 export async function searchRowsFromEntries(
   page: any,
   {
@@ -80,10 +97,13 @@ export async function searchRowsFromEntries(
   const rows: BidSearchCandidate[] = [];
 
   for (const targetUrl of candidateUrls) {
-    await page.goto(targetUrl);
-    await page.wait(2);
-
-    const payload = await page.evaluate(`
+    let payload: unknown = [];
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= SEARCH_STEP_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await page.goto(targetUrl);
+        await page.wait(2);
+        payload = await page.evaluate(`
       (() => {
         const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
         const parseDate = (text) => {
@@ -169,6 +189,17 @@ export async function searchRowsFromEntries(
         return rows;
       })()
     `);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= SEARCH_STEP_MAX_ATTEMPTS || !isRetryableSearchError(error)) {
+          throw error;
+        }
+        await page.wait(Math.min(1.5, 0.5 * attempt));
+      }
+    }
+    if (lastError) throw lastError;
 
     if (Array.isArray(payload)) {
       for (const item of payload) {
@@ -190,3 +221,7 @@ export async function searchRowsFromEntries(
 
   return dedupeCandidates(rows).slice(0, limit);
 }
+
+export const __test__ = {
+  isRetryableSearchError,
+};
