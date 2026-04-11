@@ -23,6 +23,7 @@ Run `opencli list` for the live registry.
 | **[coupang](./browser/coupang)** | `search` `add-to-cart` | 🔐 Browser |
 | **[boss](./browser/boss)** | `search` `detail` `recommend` `joblist` `greet` `batchgreet` `send` `chatlist` `chatmsg` `invite` `mark` `exchange` `resume` `stats` | 🔐 Browser |
 | **[ctrip](./browser/ctrip)** | `search` | 🔐 Browser |
+| **[thaiticketmajor](./browser/thaiticketmajor)** | `search` `detail` `session` `queue` `zones` `hold` `checkout` | 🔐 Browser |
 | **[reuters](./browser/reuters)** | `search` | 🔐 Browser |
 | **[smzdm](./browser/smzdm)** | `search` | 🔐 Browser |
 | **[jike](./browser/jike)** | `feed` `search` `post` `topic` `user` `create` `comment` `like` `repost` `notifications` | 🔐 Browser |

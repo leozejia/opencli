@@ -64,6 +64,7 @@ export default defineConfig({
                 { text: 'Coupang', link: '/adapters/browser/coupang' },
                 { text: 'BOSS Zhipin', link: '/adapters/browser/boss' },
                 { text: 'Ctrip', link: '/adapters/browser/ctrip' },
+                { text: 'ThaiTicketMajor', link: '/adapters/browser/thaiticketmajor' },
                 { text: 'Reuters', link: '/adapters/browser/reuters' },
                 { text: 'SMZDM', link: '/adapters/browser/smzdm' },
                 { text: 'Jike', link: '/adapters/browser/jike' },

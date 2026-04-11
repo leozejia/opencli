@@ -414,4 +414,14 @@ describe('browser public-data commands E2E', () => {
       expect(data[0]).toHaveProperty('value');
     }
   }, 60_000);
+
+  // ── thaiticketmajor ──
+  it('thaiticketmajor search returns event cards', async () => {
+    const data = await tryBrowserCommand(['thaiticketmajor', 'search', 'concert', '--limit', '3', '-f', 'json']);
+    expectDataOrSkip(data, 'thaiticketmajor search');
+    if (data?.length) {
+      expect(data[0]).toHaveProperty('title');
+      expect(data[0]).toHaveProperty('url');
+    }
+  }, 60_000);
 });

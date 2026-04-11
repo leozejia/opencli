@@ -151,4 +151,9 @@ describe('login-required commands — graceful failure', () => {
   it('yollomi video fails gracefully without login', async () => {
     await expectGracefulAuthFailure(['yollomi', 'video', 'a sunset over the ocean', '--no-download', '-f', 'json']);
   }, 60_000);
+
+  // ── thaiticketmajor (booking flows require login / verification) ──
+  it('thaiticketmajor zones fails gracefully without login', async () => {
+    await expectGracefulAuthFailure(['thaiticketmajor', 'zones', 'https://booking.thaiticketmajor.com/tickets/register/?la=en', '-f', 'json']);
+  }, 60_000);
 });
