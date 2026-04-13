@@ -43,6 +43,48 @@ function buildSeatAttemptEvaluate(quantity: number): string {
   `;
 }
 
+async function maybeClickBuyNow(page: FlowStatusPage): Promise<boolean> {
+  const clicked = await clickAnyByText(page, [
+    'buy now',
+    'buy ticket',
+    'confirm order',
+    'continue',
+    'checkout',
+    'next',
+  ]);
+  if (clicked.ok) {
+    await page.wait({ time: 1.2 });
+    return true;
+  }
+  return false;
+}
+
+async function resolveFailureDialogs(page: FlowStatusPage, maxLoops = 3): Promise<number> {
+  let resolved = 0;
+  for (let i = 0; i < maxLoops; i += 1) {
+    const clicked = await clickAnyByText(page, [
+      'ok',
+      'confirm',
+      'close',
+      'accept',
+      'retry',
+      '确定',
+      '确认',
+      '知道了',
+      'ตกลง',
+      'ยืนยัน',
+    ]);
+    if (!clicked.ok) {
+      break;
+    }
+    resolved += 1;
+    await page.wait({ time: 0.8 });
+  }
+  return resolved;
+}
+
+type FlowStatusPage = Parameters<typeof probeCurrentPage>[0];
+
 function detectBookingBlock(status: FlowStatus): { message: string; hint?: string } | null {
   if (status.access_restricted) {
     return {
@@ -91,7 +133,7 @@ cli({
     const url = String(kwargs.url || '').trim();
     const zone = String(kwargs.zone || '').trim();
     const fallbackZone = String(kwargs['fallback-zone'] || '').trim();
-    const quantity = normalizePositiveInt(kwargs.quantity, 1, 8);
+    const quantity = normalizePositiveInt(kwargs.quantity, 1, 4);
     const retry = normalizePositiveInt(kwargs.retry, 3, 20);
 
     await page.goto(url);
@@ -133,6 +175,8 @@ cli({
       const clickedCount = Array.isArray(result?.clicked) ? result.clicked.length : 0;
       if (clickedCount > 0) {
         await page.wait({ time: 2 });
+        const buyNowClicked = await maybeClickBuyNow(page);
+        const dialogResolved = await resolveFailureDialogs(page, 3);
         const afterProbe = await probeCurrentPage(page, 200);
         const afterStatus = buildFlowStatus(afterProbe);
         if (afterStatus.stage === 'checkout') {
@@ -141,9 +185,12 @@ cli({
             stage: afterStatus.stage,
             selected_zone: selectedZone,
             selected_count: clickedCount,
-            reason: 'seat-selection-advanced',
+            reason: buyNowClicked ? 'buy-now-submitted' : 'seat-selection-advanced',
             url: afterProbe.url,
           }];
+        }
+        if (dialogResolved > 0) {
+          result.reason = 'buy-now-locked-dialog';
         }
       }
 

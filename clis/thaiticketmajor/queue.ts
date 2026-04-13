@@ -5,7 +5,7 @@ import { clickAnyByText, maybePassEnterSite, parseQueueState, probeCurrentPage }
 function normalizePolls(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 10;
-  return Math.max(1, Math.min(60, Math.floor(parsed)));
+  return Math.max(1, Math.min(7200, Math.floor(parsed)));
 }
 
 cli({
@@ -28,6 +28,9 @@ cli({
     const show = String(kwargs.show || '').trim();
     const shouldWait = kwargs.wait === true || kwargs.wait === 'true';
     const polls = normalizePolls(kwargs.polls);
+    const actionPatterns = show
+      ? [show, 'join in', 'join queue', 'buy ticket', 'book now']
+      : ['join in', 'join queue', 'buy ticket', 'book now'];
 
     await page.goto(url);
     await page.wait({ time: 2 });
@@ -36,9 +39,8 @@ cli({
     let state = parseQueueState(await probeCurrentPage(page, 180));
 
     for (let attempt = 0; attempt < polls; attempt += 1) {
-      if (state.stage === 'event-detail' || state.stage === 'session-list') {
-        const patterns = show ? [show, 'buy ticket'] : ['buy ticket', 'book now'];
-        const clicked = await clickAnyByText(page, patterns);
+      if (['event-detail', 'session-list', 'queue-countdown'].includes(state.stage)) {
+        const clicked = await clickAnyByText(page, actionPatterns);
         if (clicked.ok) {
           await page.wait({ time: 1.5 });
         }
@@ -62,4 +64,3 @@ export const __test__ = {
   normalizePolls,
   parseQueueState,
 };
-

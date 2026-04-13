@@ -30,7 +30,9 @@ describe('thaiticketmajor shared helpers', () => {
 
   it('detects captcha and restricted access hints', () => {
     expect(detectCaptcha('Please complete reCAPTCHA before continuing')).toBe(true);
+    expect(detectCaptcha('系统检测到您是机器，请输入验证码')).toBe(true);
     expect(detectAccessRestricted('很抱歉，您的访问受到限制', 'https://gatekeeper.thaiticketmajor.com/')).toBe(true);
+    expect(detectAccessRestricted('Too many requests', 'https://booking.thaiticketmajor.com/show/x')).toBe(true);
   });
 
   it('extracts price tiers and show entries', () => {

@@ -193,12 +193,12 @@ export function matchesQuery(text: string, query: string): boolean {
 }
 
 export function detectCaptcha(text: string): boolean {
-  return /(captcha|recaptcha|verify you are human|human verification|security check|security verification|人机验证|图片验证|图片排序|验证码|滑动验证)/i.test(normalizeText(text));
+  return /(captcha|recaptcha|verify you are human|human verification|security check|security verification|prove you are human|bot check|robot check|人机验证|机器验证|系统检测到您是机器|检测到您是机器|图片验证|图片排序|验证码|滑动验证|กรุณายืนยันตัวตน|ยืนยันว่าคุณเป็นมนุษย์)/i.test(normalizeText(text));
 }
 
 export function detectAccessRestricted(text: string, url: string): boolean {
   const haystack = `${normalizeText(text)}\n${normalizeInline(url)}`;
-  return /(访问受到限制|sorry[, ]+your access|access(?: is)? restricted|restricted access|why do i see this|ip地址|ip address|gatekeeper)/i.test(haystack);
+  return /(访问受到限制|sorry[, ]+your access|access(?: is)? restricted|restricted access|why do i see this|ip地址|ip address|gatekeeper|too many requests|rate limit|request blocked|forbidden|temporarily unavailable)/i.test(haystack);
 }
 
 export function extractCountdownText(text: string): string {

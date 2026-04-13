@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { __test__ } from './queue.js';
 
 describe('thaiticketmajor queue helpers', () => {
+  it('normalizes polls with long-window cap', () => {
+    expect(__test__.normalizePolls(99999)).toBe(7200);
+    expect(__test__.normalizePolls(0)).toBe(1);
+  });
+
   it('maps queue countdown and progress states', () => {
     expect(__test__.parseQueueState({
       url: 'https://booking.thaiticketmajor.com/show/example',
@@ -18,4 +23,3 @@ describe('thaiticketmajor queue helpers', () => {
     }).stage).toBe('queue-progress');
   });
 });
-
