@@ -12,6 +12,9 @@ describe('classifyBrowserError', () => {
       'CDP connection reset',
       'Daemon command failed',
       'No window with id: 123',
+      'No tab with id: 429996197',
+      'Detached while handling command.',
+      'Debugger is not attached to the tab',
     ]) {
       const advice = classifyBrowserError(new Error(msg));
       expect(advice.kind, `expected "${msg}" → extension-transient`).toBe('extension-transient');

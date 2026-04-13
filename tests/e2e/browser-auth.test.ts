@@ -180,4 +180,9 @@ describe('login-required commands — graceful failure', () => {
   it('quark share-tree fails gracefully without login', async () => {
     await expectGracefulAuthFailure(['quark', 'share-tree', 'https://pan.quark.cn/s/abc123', '-f', 'json']);
   }, 60_000);
+
+  // ── thaiticketmajor (booking flows require login / verification) ──
+  it('thaiticketmajor zones fails gracefully without login', async () => {
+    await expectGracefulAuthFailure(['thaiticketmajor', 'zones', 'https://booking.thaiticketmajor.com/tickets/register/?la=en', '-f', 'json']);
+  }, 60_000);
 });

@@ -45,6 +45,9 @@ const EXTENSION_TRANSIENT_PATTERNS = [
   'CDP connection',
   'Daemon command failed',
   'No window with id',
+  'No tab with id',
+  'Debugger is not attached to the tab',
+  'Detached while handling command',
 ] as const;
 
 /**
