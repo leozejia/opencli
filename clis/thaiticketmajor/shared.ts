@@ -631,6 +631,110 @@ export async function clickAnyByText(page: IPage, patterns: string[]): Promise<{
   };
 }
 
+export function buildWaitAndClickAnyByTextEvaluate(patterns: string[], timeoutMs = 1200): string {
+  return `
+    (() => new Promise((resolve) => {
+      const normalize = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      const timeoutMs = Math.max(50, Math.min(5000, ${Math.floor(timeoutMs)}));
+      const patterns = ${JSON.stringify(patterns)}.map((value) => normalize(value)).filter(Boolean);
+      const selector = 'a[href], button, [role="button"], input[type="button"], input[type="submit"]';
+      let done = false;
+      let observer = null;
+      let timer = null;
+      let ticker = null;
+
+      const cleanup = () => {
+        if (observer) observer.disconnect();
+        if (timer) clearTimeout(timer);
+        if (ticker) clearInterval(ticker);
+      };
+
+      const resolveOnce = (payload) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(payload);
+      };
+
+      const scoreCandidate = (text, href, className, ariaLabel) => {
+        let score = -1;
+        for (const pattern of patterns) {
+          const tokens = pattern.split(/\\s+/).filter(Boolean);
+          if (!tokens.length) continue;
+          if (!tokens.every((token) => text.includes(token))) continue;
+          score = Math.max(score, tokens.length * 10 - Math.abs(text.length - pattern.length));
+        }
+        if (score < 0) return score;
+        if (/booking\\.thaiticketmajor\\.com|queue-it|zones\\.php|verify_condition/i.test(href || '')) score += 8;
+        if (/(join|queue|buy|book|ticket|เข้าคิว|เข้าร่วม)/i.test(text || '')) score += 4;
+        if (/(join|queue|buy|book|ticket)/i.test((className || '') + ' ' + (ariaLabel || ''))) score += 2;
+        return score;
+      };
+
+      const pickBest = () => {
+        const elements = Array.from(document.querySelectorAll(selector));
+        let best = null;
+        for (const element of elements) {
+          const text = normalize(element.innerText || element.textContent || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || '');
+          if (!text) continue;
+          const disabled = Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true');
+          if (disabled) continue;
+          const href = normalize(element.href || element.getAttribute('href') || '');
+          const className = normalize(element.getAttribute('class') || '');
+          const ariaLabel = normalize(element.getAttribute('aria-label') || '');
+          const score = scoreCandidate(text, href, className, ariaLabel);
+          if (score < 0) continue;
+          if (!best || score > best.score) {
+            best = { element, score, text, href };
+          }
+        }
+        return best;
+      };
+
+      const tryClick = () => {
+        const best = pickBest();
+        if (!best) return false;
+        best.element.click();
+        resolveOnce({ ok: true, text: best.text, href: best.href });
+        return true;
+      };
+
+      if (tryClick()) return;
+
+      observer = new MutationObserver(() => {
+        tryClick();
+      });
+      observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+
+      ticker = setInterval(() => {
+        tryClick();
+      }, 120);
+
+      timer = setTimeout(() => {
+        resolveOnce({ ok: false, reason: 'not-found-timeout' });
+      }, timeoutMs);
+    }))()
+  `;
+}
+
+export async function waitAndClickAnyByText(
+  page: IPage,
+  patterns: string[],
+  timeoutMs = 1200,
+): Promise<{ ok: boolean; text?: string; href?: string }> {
+  const result = await page.evaluate(buildWaitAndClickAnyByTextEvaluate(patterns, timeoutMs)) as Record<string, unknown>;
+  return {
+    ok: Boolean(result?.ok),
+    text: normalizeInline(result?.text),
+    href: absolutizeUrl(normalizeInline(result?.href)),
+  };
+}
+
 export async function maybePassEnterSite(page: IPage): Promise<boolean> {
   const probe = await probeCurrentPage(page);
   if (detectTicketStage(probe) !== 'enter-site') return false;

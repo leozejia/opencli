@@ -13,6 +13,7 @@ import {
   parsePriceTiers,
   parseQueueState,
   parseZones,
+  buildWaitAndClickAnyByTextEvaluate,
 } from './shared.js';
 
 describe('thaiticketmajor shared helpers', () => {
@@ -128,5 +129,12 @@ describe('thaiticketmajor shared helpers', () => {
     expect(status.requires_login).toBe(true);
     expect(nextSeatRetryDecision({ attempts: 2, maxAttempts: 5, lastReason: 'seat-locked' })).toBe('retry');
     expect(nextSeatRetryDecision({ attempts: 4, maxAttempts: 5, lastReason: 'seat-locked', hasFallbackZone: true })).toBe('switch-zone');
+  });
+
+  it('builds wait-and-click evaluator with mutation observer', () => {
+    const script = buildWaitAndClickAnyByTextEvaluate(['join in', 'buy ticket'], 1200);
+    expect(script).toContain('MutationObserver');
+    expect(script).toContain('not-found-timeout');
+    expect(script).toContain('setInterval');
   });
 });
