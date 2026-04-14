@@ -256,6 +256,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepalive') void connect();
 });
 
+// Some load-extension startup paths may not emit onInstalled/onStartup reliably.
+// Initialize eagerly on worker load; guard avoids duplicate registration.
+initialize();
+
 // ─── Popup status API ───────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
