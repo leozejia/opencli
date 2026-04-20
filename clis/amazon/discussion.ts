@@ -1,7 +1,8 @@
-import { CommandExecutionError } from '@jackwener/opencli/errors';
+import { AuthRequiredError, CommandExecutionError } from '@jackwener/opencli/errors';
 import { cli, Strategy } from '@jackwener/opencli/registry';
 import type { IPage } from '@jackwener/opencli/types';
 import {
+  buildProductUrl,
   buildDiscussionUrl,
   buildProvenance,
   cleanText,
@@ -29,6 +30,12 @@ interface DiscussionPayload {
     body?: string | null;
     verified?: boolean;
   }>;
+}
+
+interface AmazonStateSnapshot {
+  href?: string;
+  title?: string;
+  body_text?: string;
 }
 
 function normalizeDiscussionPayload(payload: DiscussionPayload): Record<string, unknown> {
@@ -60,11 +67,21 @@ function normalizeDiscussionPayload(payload: DiscussionPayload): Record<string, 
   };
 }
 
-async function readDiscussionPayload(page: IPage, input: string, limit: number): Promise<DiscussionPayload> {
-  const url = buildDiscussionUrl(input);
-  const state = await gotoAndReadState(page, url, 2500, 'discussion');
-  assertUsableState(state, 'discussion');
+function hasDiscussionSummary(payload: DiscussionPayload): boolean {
+  return Boolean(cleanText(payload.average_rating_text) || cleanText(payload.total_review_count_text));
+}
 
+function isSignInState(state: AmazonStateSnapshot): boolean {
+  const href = cleanText(state.href).toLowerCase();
+  const title = cleanText(state.title).toLowerCase();
+  const bodyText = cleanText(state.body_text).toLowerCase();
+  return href.includes('/ap/signin')
+    || title.includes('amazon sign-in')
+    || bodyText.includes('sign in')
+    || bodyText.includes('create account');
+}
+
+async function readCurrentDiscussionPayload(page: IPage, limit: number): Promise<DiscussionPayload> {
   return await page.evaluate(`
     (() => ({
       href: window.location.href,
@@ -85,6 +102,42 @@ async function readDiscussionPayload(page: IPage, input: string, limit: number):
       })),
     }))()
   `) as DiscussionPayload;
+}
+
+async function readDiscussionPayload(page: IPage, input: string, limit: number): Promise<DiscussionPayload> {
+  const reviewUrl = buildDiscussionUrl(input);
+  const reviewState = await gotoAndReadState(page, reviewUrl, 2500, 'discussion');
+  assertUsableState(reviewState, 'discussion');
+
+  const reviewPayload = await readCurrentDiscussionPayload(page, limit);
+  if (hasDiscussionSummary(reviewPayload)) {
+    return reviewPayload;
+  }
+
+  const productUrl = buildProductUrl(input);
+  const productState = await gotoAndReadState(page, productUrl, 2500, 'discussion');
+  assertUsableState(productState, 'discussion');
+
+  if (isSignInState(reviewState) && isSignInState(productState)) {
+    throw new AuthRequiredError(
+      'amazon.com',
+      'Amazon review discussion requires an active signed-in Amazon session in the shared Chrome profile.',
+    );
+  }
+
+  const productPayload = await readCurrentDiscussionPayload(page, limit);
+  if (hasDiscussionSummary(productPayload)) {
+    return productPayload;
+  }
+
+  if (isSignInState(reviewState)) {
+    throw new CommandExecutionError(
+      'amazon review page redirected to sign-in and product page fallback did not expose review summary',
+      'Open the product page in Chrome, verify reviews are visible, and retry.',
+    );
+  }
+
+  return reviewPayload;
 }
 
 cli({
@@ -128,4 +181,6 @@ cli({
 
 export const __test__ = {
   normalizeDiscussionPayload,
+  hasDiscussionSummary,
+  isSignInState,
 };
