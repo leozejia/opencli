@@ -69,6 +69,7 @@ describe('procurement contract helpers', () => {
   it('classifies detail urls and content type', () => {
     expect(__test__.isDetailPage('https://a.com/notice/detail?id=1')).toBe(true);
     expect(__test__.isDetailPage('https://shandong.jianyu360.cn/jybx/20260310_26030938267551.html')).toBe(true);
+    expect(__test__.isDetailPage('https://scm.esinochem.com/hpc/index.html#/content?noticeId=2000376870309748738&noticeType=01&bid=1996759401458167809')).toBe(true);
     expect(__test__.isDetailPage('https://a.com/search?page=1')).toBe(false);
     expect(__test__.classifyContentType('中标结果公告', 'https://a.com/detail/1', '中标候选人')).toBe('result');
     expect(__test__.classifyContentType(

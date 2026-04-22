@@ -241,6 +241,13 @@ function classifyContentType(title: string, url: string, contextText: string): P
 function isDetailPage(url: string): boolean {
   const lower = cleanText(url).toLowerCase();
   if (!lower) return false;
+  const hashIndex = lower.indexOf('#');
+  if (hashIndex >= 0) {
+    const hashText = lower.slice(hashIndex);
+    const hasHashDetailToken = DETAIL_URL_HINTS.some((hint) => hashText.includes(hint));
+    const hasHashListToken = LIST_URL_HINTS.some((hint) => hashText.includes(hint));
+    if (hasHashDetailToken && !hasHashListToken) return true;
+  }
   const hasDetailToken = DETAIL_URL_HINTS.some((hint) => lower.includes(hint));
   if (!hasDetailToken) return false;
   const hasListToken = LIST_URL_HINTS.some((hint) => lower.includes(hint));
