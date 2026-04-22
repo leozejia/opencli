@@ -4408,9 +4408,6 @@
         "help": "Attach a file (PDF, image, text) with the prompt"
       }
     ],
-    "columns": [
-      "response"
-    ],
     "timeout": 180,
     "type": "js",
     "modulePath": "deepseek/ask.js",
@@ -17035,6 +17032,13 @@
         "default": 3,
         "required": false,
         "help": "Seconds to wait after page load"
+      },
+      {
+        "name": "stdout",
+        "type": "boolean",
+        "default": false,
+        "required": false,
+        "help": "Print markdown to stdout instead of saving to a file"
       }
     ],
     "columns": [
