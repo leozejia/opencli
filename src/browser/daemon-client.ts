@@ -16,16 +16,14 @@ const OPENCLI_HEADERS = { 'X-OpenCLI': '1' };
 let _idCounter = 0;
 
 function generateId(): string {
-  return `cmd_${Date.now()}_${++_idCounter}`;
+  return `cmd_${process.pid}_${Date.now()}_${++_idCounter}`;
 }
 
 export interface DaemonCommand {
   id: string;
-  action: 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'sessions' | 'set-file-input' | 'insert-text' | 'bind-current' | 'network-capture-start' | 'network-capture-read' | 'cdp';
-  /** Target page identity (targetId). Cross-layer contract — preferred over tabId. */
+  action: 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'sessions' | 'set-file-input' | 'insert-text' | 'bind-current' | 'network-capture-start' | 'network-capture-read' | 'cdp' | 'frames';
+  /** Target page identity (targetId). Cross-layer contract with the extension. */
   page?: string;
-  /** @deprecated Legacy tab ID — use `page` (targetId) instead. */
-  tabId?: number;
   code?: string;
   workspace?: string;
   url?: string;
@@ -48,6 +46,12 @@ export interface DaemonCommand {
   pattern?: string;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
+  /** When true, automation windows are created in the foreground */
+  windowFocused?: boolean;
+  /** Custom idle timeout in seconds for this workspace session. Overrides the default. */
+  idleTimeout?: number;
+  /** Frame index for cross-frame operations (0-based, from 'frames' action) */
+  frameIndex?: number;
 }
 
 export interface DaemonResult {
@@ -63,10 +67,11 @@ export interface DaemonStatus {
   ok: boolean;
   pid: number;
   uptime: number;
+  daemonVersion?: string;
   extensionConnected: boolean;
   extensionVersion?: string;
+  extensionCompatRange?: string;
   pending: number;
-  lastCliRequestTime: number;
   memoryMB: number;
   port: number;
 }
@@ -138,7 +143,9 @@ async function sendCommandRaw(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const id = generateId();
-    const command: DaemonCommand = { id, action, ...params };
+    const wf = process.env.OPENCLI_WINDOW_FOCUSED;
+    const windowFocused = (wf === '1' || wf === 'true') ? true : undefined;
+    const command: DaemonCommand = { id, action, ...params, ...(windowFocused && { windowFocused }) };
     try {
       const res = await requestDaemon('/command', {
         method: 'POST',
@@ -150,6 +157,11 @@ async function sendCommandRaw(
       const result = (await res.json()) as DaemonResult;
 
       if (!result.ok) {
+        const isDuplicateCommandId = res.status === 409
+          || (result.error ?? '').includes('Duplicate command id');
+        if (isDuplicateCommandId && attempt < maxRetries) {
+          continue;
+        }
         const advice = classifyBrowserError(new Error(result.error ?? ''));
         if (advice.retryable && attempt < maxRetries) {
           await sleep(advice.delayMs);
