@@ -1,6 +1,6 @@
 import { CommandExecutionError } from '@jackwener/opencli/errors';
 import { cli, Strategy } from '@jackwener/opencli/registry';
-import { isThaiticketmajorUrl, looksLikeEventUrl, maybePassEnterSite, parseQueueState, probeCurrentPage, waitAndClickAnyByText } from './shared.js';
+import { isThaiticketmajorUrl, looksLikeEventUrl, maybePassEnterSite, parseQueueState, probeCurrentPage, waitAndClickAnyByText, waitAndClickShowByLabel } from './shared.js';
 
 function normalizePolls(value: unknown): number {
   const parsed = Number(value);
@@ -98,10 +98,16 @@ cli({
 
     for (let attempt = 0; attempt < polls; attempt += 1) {
       if (shouldAttemptJoinClick(state.stage) && !joinClicked) {
-        const clicked = await waitAndClickAnyByText(page, actionPatterns, pickJoinProbeTimeoutMs(state.stage));
+        let clicked: { ok: boolean; text?: string; href?: string; rowText?: string } = { ok: false };
+        if (show) {
+          clicked = await waitAndClickShowByLabel(page, show, pickJoinProbeTimeoutMs(state.stage));
+        }
+        if (!clicked.ok) {
+          clicked = await waitAndClickAnyByText(page, actionPatterns, pickJoinProbeTimeoutMs(state.stage));
+        }
         if (clicked.ok) {
           joinClicked = true;
-          clickedAction = String(clicked.text || clicked.href || '').trim();
+          clickedAction = String(clicked.rowText || clicked.text || clicked.href || '').trim();
           await page.wait({ time: 0.4 });
         }
       }
@@ -115,6 +121,7 @@ cli({
           ...state,
           join_clicked: joinClicked || undefined,
           clicked_action: clickedAction || undefined,
+          adapter_build: 'thaiticketmajor-show-time-v1',
           attempt: attempt + 1,
         }];
       }
@@ -125,6 +132,7 @@ cli({
       ...state,
       join_clicked: joinClicked || undefined,
       clicked_action: clickedAction || undefined,
+      adapter_build: 'thaiticketmajor-show-time-v1',
       attempt: polls,
     }];
   },

@@ -14,6 +14,8 @@ import {
   parseQueueState,
   parseZones,
   buildWaitAndClickAnyByTextEvaluate,
+  buildWaitAndClickShowByLabelEvaluate,
+  showLabelMatchesShowRow,
 } from './shared.js';
 
 describe('thaiticketmajor shared helpers', () => {
@@ -27,6 +29,14 @@ describe('thaiticketmajor shared helpers', () => {
     expect(detectTicketStage({ url: 'https://booking.thaiticketmajor.com/show', text: 'Payment Method Delivery Method VISA Alipay' })).toBe('checkout');
     expect(detectTicketStage({ url: 'https://www.thaiticketmajor.com/concert/example.html', text: 'Official Ticket\nVISA Alipay\nBuy Ticket' })).toBe('event-detail');
     expect(detectTicketStage({ url: 'https://gatekeeper.thaiticketmajor.com/', text: '很抱歉，您的访问受到限制' })).toBe('access-restricted');
+  });
+
+  it('does not classify authenticated event pages as login pages', () => {
+    expect(detectTicketStage({
+      url: 'https://www.thaiticketmajor.com/performance/wu-the-fate-begins.html',
+      title: 'Official Ticket | WU : The Fate Begins',
+      text: 'View your profile My Ticket Purchase History Edit Profile Change Password Sign Out Ticket Status COMING SOON Tuesday 5 May 2026 19:30 Payment Condition Payment Method',
+    })).toBe('session-list');
   });
 
   it('detects captcha and restricted access hints', () => {
@@ -136,5 +146,32 @@ describe('thaiticketmajor shared helpers', () => {
     expect(script).toContain('MutationObserver');
     expect(script).toContain('not-found-timeout');
     expect(script).toContain('setInterval');
+  });
+
+  it('matches target show labels against ThaiTicketMajor date rows and time buttons', () => {
+    expect(showLabelMatchesShowRow(
+      '2026-05-05 19:30',
+      'Tuesday 5 May 2026 19:30',
+      '19:30',
+    )).toBe(true);
+    expect(showLabelMatchesShowRow(
+      '2026-05-06 19:30',
+      'Tuesday 5 May 2026 19:30',
+      '19:30',
+    )).toBe(false);
+    expect(showLabelMatchesShowRow(
+      '19:30',
+      'Tuesday 5 May 2026 19:30',
+      '19:30',
+    )).toBe(true);
+  });
+
+  it('builds show-time watcher for disabled-to-enabled transitions', () => {
+    const script = buildWaitAndClickShowByLabelEvaluate('2026-05-05 19:30', 1200);
+    expect(script).toContain('MutationObserver');
+    expect(script).toContain('data-button');
+    expect(script).toContain('not-allowed');
+    expect(script).toContain('disabled');
+    expect(script).toContain('rowText');
   });
 });

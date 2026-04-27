@@ -131,6 +131,164 @@ function normalizeForMatch(input: unknown): string {
   return normalizeInline(input).toLowerCase();
 }
 
+
+interface ShowDateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+interface ShowLabelParts {
+  time: string;
+  date: ShowDateParts | null;
+}
+
+const MONTH_ALIASES: Record<string, number> = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
+
+const MONTH_NAMES = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function validShowDate(year: number, month: number, day: number): ShowDateParts | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year, month, day };
+}
+
+function normalizeClock(input: unknown): string {
+  const match = normalizeInline(input).match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!match) return '';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return '';
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+function textContainsClock(text: string, clock: string): boolean {
+  if (!clock) return false;
+  for (const match of normalizeInline(text).matchAll(/\b(\d{1,2}):(\d{2})\b/g)) {
+    if (normalizeClock(match[0]) === clock) return true;
+  }
+  return false;
+}
+
+function parseShowDate(input: unknown): ShowDateParts | null {
+  const normalized = normalizeForMatch(input);
+  const isoMatch = normalized.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (isoMatch) {
+    return validShowDate(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]));
+  }
+
+  const dayMonthYear = normalized.match(/\b(\d{1,2})\s+([a-z]{3,9})\s+(\d{4})\b/);
+  if (dayMonthYear) {
+    const month = MONTH_ALIASES[dayMonthYear[2]] || 0;
+    return validShowDate(Number(dayMonthYear[3]), month, Number(dayMonthYear[1]));
+  }
+
+  const monthDayYear = normalized.match(/\b([a-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})\b/);
+  if (monthDayYear) {
+    const month = MONTH_ALIASES[monthDayYear[1]] || 0;
+    return validShowDate(Number(monthDayYear[3]), month, Number(monthDayYear[2]));
+  }
+
+  return null;
+}
+
+function parseShowLabelParts(showLabel: unknown): ShowLabelParts {
+  return {
+    time: normalizeClock(showLabel),
+    date: parseShowDate(showLabel),
+  };
+}
+
+function textMatchesShowDate(text: string, date: ShowDateParts): boolean {
+  const normalized = normalizeForMatch(text);
+  const year = String(date.year);
+  const month = String(date.month);
+  const monthPadded = pad2(date.month);
+  const day = String(date.day);
+  const dayPadded = pad2(date.day);
+  const monthName = MONTH_NAMES[date.month - 1];
+  const monthShort = monthName.slice(0, 3);
+
+  const numericForms = [
+    `${year}-${monthPadded}-${dayPadded}`,
+    `${year}/${monthPadded}/${dayPadded}`,
+    `${year}-${month}-${day}`,
+    `${year}/${month}/${day}`,
+  ];
+  if (numericForms.some((form) => normalized.includes(form))) return true;
+
+  const monthAlternates = [monthName, monthShort].map(escapeRegExp).join('|');
+  const dayMonthYear = new RegExp(`\\b0?${day}\\s+(?:${monthAlternates})\\s+${year}\\b`, 'i');
+  const monthDayYear = new RegExp(`\\b(?:${monthAlternates})\\s+0?${day},?\\s+${year}\\b`, 'i');
+  return dayMonthYear.test(normalized) || monthDayYear.test(normalized);
+}
+
+export function showLabelMatchesShowRow(showLabel: string, rowText: string, buttonText = ''): boolean {
+  const label = parseShowLabelParts(showLabel);
+  const combinedRow = `${normalizeInline(rowText)} ${normalizeInline(buttonText)}`.trim();
+  if (!label.time) {
+    const normalizedLabel = normalizeForMatch(showLabel);
+    return Boolean(normalizedLabel) && normalizeForMatch(combinedRow).includes(normalizedLabel);
+  }
+
+  if (!textContainsClock(buttonText, label.time) && !textContainsClock(combinedRow, label.time)) {
+    return false;
+  }
+
+  if (label.date && !textMatchesShowDate(combinedRow, label.date)) {
+    return false;
+  }
+
+  return true;
+}
+
 function splitLines(text: string): string[] {
   return normalizeText(text)
     .split('\n')
@@ -193,12 +351,26 @@ export function matchesQuery(text: string, query: string): boolean {
 }
 
 export function detectCaptcha(text: string): boolean {
-  return /(captcha|recaptcha|verify you are human|human verification|security check|security verification|prove you are human|bot check|robot check|人机验证|机器验证|系统检测到您是机器|检测到您是机器|图片验证|图片排序|验证码|滑动验证|กรุณายืนยันตัวตน|ยืนยันว่าคุณเป็นมนุษย์)/i.test(normalizeText(text));
+  return /(captcha|recaptcha|verify you are human|enter code for process|human verification|security check|security verification|prove you are human|bot check|robot check|人机验证|机器验证|系统检测到您是机器|检测到您是机器|图片验证|图片排序|验证码|滑动验证|กรุณายืนยันตัวตน|ยืนยันว่าคุณเป็นมนุษย์)/i.test(normalizeText(text));
+}
+
+function detectVerificationUrl(url: string): boolean {
+  return /booking\.thaiticketmajor\.com\/booking\/[^/]+\/verify\.php/i.test(normalizeInline(url));
 }
 
 export function detectAccessRestricted(text: string, url: string): boolean {
   const haystack = `${normalizeText(text)}\n${normalizeInline(url)}`;
   return /(访问受到限制|sorry[, ]+your access|access(?: is)? restricted|restricted access|why do i see this|ip地址|ip address|gatekeeper|too many requests|rate limit|request blocked|forbidden|temporarily unavailable)/i.test(haystack);
+}
+
+function detectAuthenticatedNav(text: string): boolean {
+  return /(view your profile|my ticket|purchase history|edit profile|change password|sign out|logout|log out)/i.test(normalizeText(text));
+}
+
+function detectLoginForm(text: string): boolean {
+  const normalized = normalizeText(text);
+  if (detectAuthenticatedNav(normalized)) return false;
+  return LOGIN_HINT.test(normalized);
 }
 
 export function extractCountdownText(text: string): string {
@@ -291,18 +463,26 @@ export function detectTicketStage(snapshot: { url: string; text: string; title?:
 
   if (detectAccessRestricted(combined, url)) return 'access-restricted';
   if (/enter site/i.test(combined)) return 'enter-site';
+  if (detectVerificationUrl(url)) return 'captcha';
 
-  const isLoginPage = /\/register\/|\/login\b/i.test(url) || LOGIN_HINT.test(combined);
-  if (isLoginPage && detectCaptcha(combined)) return 'captcha';
-  if (isLoginPage) return 'login';
+  const isLoginUrl = /\/register\/|\/login\b/i.test(url);
+  if (isLoginUrl && detectCaptcha(combined)) return 'captcha';
+  if (isLoginUrl) return 'login';
   if (detectCaptcha(combined)) return 'captcha';
+
+  const publicEventDetail = /www\.thaiticketmajor\.com/i.test(url) && looksLikeEventUrl(url);
+  if (publicEventDetail && SHOW_HINT.test(combined) && BUY_HINT.test(combined)) return 'session-list';
+  if (publicEventDetail && BUY_HINT.test(combined)) return 'event-detail';
+
+  const hasLoginForm = detectLoginForm(combined);
+  if (hasLoginForm) return 'login';
 
   if (TTM_QUEUE_HOST_HINTS.some((fragment) => url.includes(fragment)) || /\bqueue\b|estimated wait|waiting room|progress bar|countdown/i.test(combined)) {
     return extractCountdownText(combined) ? 'queue-countdown' : 'queue-progress';
   }
 
   const bookingHost = /booking\.thaiticketmajor\.com/i.test(url);
-  if (CHECKOUT_FORM_HINT.test(combined) || (bookingHost && PAYMENT_HINT.test(combined))) return 'checkout';
+  if (bookingHost && (CHECKOUT_FORM_HINT.test(combined) || PAYMENT_HINT.test(combined))) return 'checkout';
   if (SEAT_HINT.test(combined)) return 'seat-map';
   if (ZONE_HINT.test(combined) && !SEAT_HINT.test(combined)) return 'zone-map';
   if (SHOW_HINT.test(combined) && BUY_HINT.test(combined)) return 'session-list';
@@ -313,7 +493,7 @@ export function detectTicketStage(snapshot: { url: string; text: string; title?:
 export function buildFlowStatus(probe: PageProbe): FlowStatus {
   const stage = detectTicketStage(probe);
   const requiresCaptcha = stage === 'captcha' || detectCaptcha(probe.text);
-  const requiresLogin = stage === 'login' || /member login|log in|sign in|password|email/i.test(probe.text);
+  const requiresLogin = stage === 'login';
   const accessRestricted = stage === 'access-restricted';
 
   let hint = '';
@@ -720,6 +900,175 @@ export function buildWaitAndClickAnyByTextEvaluate(patterns: string[], timeoutMs
       }, timeoutMs);
     }))()
   `;
+}
+
+
+export function buildWaitAndClickShowByLabelEvaluate(showLabel: string, timeoutMs = 1200): string {
+  return `
+    (() => new Promise((resolve) => {
+      const showLabel = ${JSON.stringify(showLabel)};
+      const timeoutMs = Math.max(50, Math.min(5000, ${Math.floor(timeoutMs)}));
+      const monthAliases = {
+        jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+        apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+        aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+        oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+      };
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const clean = (value) => String(value ?? '').replace(/\\u00a0/g, ' ').replace(/\\s+/g, ' ').trim();
+      const normalize = (value) => clean(value).toLowerCase();
+      const pad2 = (value) => String(value).padStart(2, '0');
+      const validDate = (year, month, day) => {
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+        if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+        return { year, month, day };
+      };
+      const normalizeClock = (value) => {
+        const match = clean(value).match(/\\b(\\d{1,2}):(\\d{2})\\b/);
+        if (!match) return '';
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        if (!Number.isInteger(hour) || !Number.isInteger(minute)) return '';
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
+        return pad2(hour) + ':' + pad2(minute);
+      };
+      const textContainsClock = (text, clock) => {
+        if (!clock) return false;
+        for (const match of clean(text).matchAll(/\\b(\\d{1,2}):(\\d{2})\\b/g)) {
+          if (normalizeClock(match[0]) === clock) return true;
+        }
+        return false;
+      };
+      const parseDate = (value) => {
+        const text = normalize(value);
+        const iso = text.match(/\\b(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})\\b/);
+        if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+        const dayMonthYear = text.match(/\\b(\\d{1,2})\\s+([a-z]{3,9})\\s+(\\d{4})\\b/);
+        if (dayMonthYear) return validDate(Number(dayMonthYear[3]), monthAliases[dayMonthYear[2]] || 0, Number(dayMonthYear[1]));
+        const monthDayYear = text.match(/\\b([a-z]{3,9})\\s+(\\d{1,2}),?\\s+(\\d{4})\\b/);
+        if (monthDayYear) return validDate(Number(monthDayYear[3]), monthAliases[monthDayYear[1]] || 0, Number(monthDayYear[2]));
+        return null;
+      };
+      const textMatchesDate = (text, date) => {
+        const normalized = normalize(text);
+        const year = String(date.year);
+        const month = String(date.month);
+        const monthPadded = pad2(date.month);
+        const day = String(date.day);
+        const dayPadded = pad2(date.day);
+        const numericForms = [
+          year + '-' + monthPadded + '-' + dayPadded,
+          year + '/' + monthPadded + '/' + dayPadded,
+          year + '-' + month + '-' + day,
+          year + '/' + month + '/' + day,
+        ];
+        if (numericForms.some((form) => normalized.includes(form))) return true;
+        const monthName = monthNames[date.month - 1];
+        const monthShort = monthName.slice(0, 3);
+        const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+        return tokens.includes(year)
+          && (tokens.includes(day) || tokens.includes(dayPadded))
+          && (tokens.includes(monthName) || tokens.includes(monthShort));
+      };
+      const target = { time: normalizeClock(showLabel), date: parseDate(showLabel) };
+      const matchesShowRow = (rowText, buttonText) => {
+        const combined = clean(rowText + ' ' + buttonText);
+        if (!target.time) {
+          const label = normalize(showLabel);
+          return Boolean(label) && normalize(combined).includes(label);
+        }
+        if (!textContainsClock(buttonText, target.time) && !textContainsClock(combined, target.time)) return false;
+        if (target.date && !textMatchesDate(combined, target.date)) return false;
+        return true;
+      };
+
+      let done = false;
+      let observer = null;
+      let timer = null;
+      let ticker = null;
+
+      const cleanup = () => {
+        if (observer) observer.disconnect();
+        if (timer) clearTimeout(timer);
+        if (ticker) clearInterval(ticker);
+      };
+      const resolveOnce = (payload) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(payload);
+      };
+      const isDisabledish = (element) => {
+        const style = getComputedStyle(element);
+        const className = normalize(element.getAttribute('class') || '');
+        return Boolean(
+          element.disabled
+          || element.getAttribute('disabled') !== null
+          || element.getAttribute('aria-disabled') === 'true'
+          || /disabled|disable|coming|unavailable/.test(className)
+          || style.pointerEvents === 'none'
+          || style.cursor === 'not-allowed'
+        );
+      };
+      const pickBest = () => {
+        const selector = '#section-event-round a[data-button], #section-event-round a.btn, #section-event-round button, #section-event-round [role="button"], a[data-button], a.btn, button, [role="button"]';
+        const elements = Array.from(document.querySelectorAll(selector));
+        let best = null;
+        for (const element of elements) {
+          if (isDisabledish(element)) continue;
+          const text = clean(element.innerText || element.textContent || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || '');
+          const row = element.closest('#section-event-round .row, .event-detail-item .row, .box-event-list .row, tr, li, .row') || element;
+          const rowText = clean(row.innerText || row.textContent || '');
+          if (!matchesShowRow(rowText, text)) continue;
+          const href = clean(element.href || element.getAttribute('href') || element.getAttribute('data-href') || '');
+          const score = (element.hasAttribute('data-button') ? 20 : 0) + (textContainsClock(text, target.time) ? 10 : 0) + (href && !/^javascript:?;?$/i.test(href) ? 2 : 0);
+          if (!best || score > best.score) {
+            best = { element, score, text, rowText, href };
+          }
+        }
+        return best;
+      };
+      const tryClick = () => {
+        const best = pickBest();
+        if (!best) return false;
+        best.element.scrollIntoView?.({ block: 'center', inline: 'center' });
+        best.element.click();
+        resolveOnce({ ok: true, text: best.text, rowText: best.rowText, href: best.href });
+        return true;
+      };
+
+      if (tryClick()) return;
+      observer = new MutationObserver(() => {
+        tryClick();
+      });
+      observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+      ticker = setInterval(() => {
+        tryClick();
+      }, 80);
+      timer = setTimeout(() => {
+        resolveOnce({ ok: false, reason: 'not-found-timeout' });
+      }, timeoutMs);
+    }))()
+  `;
+}
+
+export async function waitAndClickShowByLabel(
+  page: IPage,
+  showLabel: string,
+  timeoutMs = 1200,
+): Promise<{ ok: boolean; text?: string; href?: string; rowText?: string }> {
+  const result = await page.evaluate(buildWaitAndClickShowByLabelEvaluate(showLabel, timeoutMs)) as Record<string, unknown>;
+  return {
+    ok: Boolean(result?.ok),
+    text: normalizeInline(result?.text),
+    href: absolutizeUrl(normalizeInline(result?.href)),
+    rowText: normalizeInline(result?.rowText),
+  };
 }
 
 export async function waitAndClickAnyByText(
